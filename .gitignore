@@ -1,0 +1,17 @@
+.env
+.env.*
+*.env
+.envrc
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+allure-results/
+allure-report/
+artifacts/
+.chrome-profile/
+.chrome-trello-profile/
+.idea/
+*.log
+pytest_*.txt
+*_last.txt
