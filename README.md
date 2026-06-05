@@ -1,36 +1,33 @@
 # trello-ui-tests
 
-UI-автотесты Trello (Selenium + Selene). **API-first**: `trello_api` готовит данные, UI проверяет отображение и действия пользователя.
+UI-автотесты Trello (Selenium + Selene). **Без логина в браузере**: API создаёт **публичные** доски, UI проверяет отображение по прямому URL.
 
-Экосистема: **trello_api** (данные) → **trello_ui** → **trello_mobile**. CI: [docs/CI.md](docs/CI.md).
+Экосистема: **trello_api** (CRUD + auth) → **trello_ui** (read-only web) → **trello_mobile** (native app). CI: [docs/CI.md](docs/CI.md).
 
 ## Стек
 
 - Python 3.12+
 - Pytest, Selene, Selenium
 - Allure, python-dotenv
-- Клон **trello_api** рядом или `TRELLO_API_PATH` в CI (клиент, generators, модели)
+- Клон **trello_api** рядом или `TRELLO_API_PATH` в CI
 
 ## Установка
 
 ```bash
 cd trello_ui
 python -m venv .venv
-.venv\Scripts\activate          # Windows
+.venv\Scripts\activate
 pip install -r requirements.txt
-copy .env.example .env
 ```
 
-Заполните `.env`: учётные данные Trello/Atlassian и API key/token (см. репозиторий **trello_api**).
-
-Установите ChromeDriver / GeckoDriver, совместимый с браузером.
+В `.env` нужны только **API key/token** (как в trello_api). Email и пароль Trello для UI **не требуются**.
 
 ## Запуск
 
 ```bash
 pytest
 pytest -m smoke
-pytest tests/test_card_update.py
+pytest -m ui
 ```
 
 ## Allure
@@ -40,23 +37,23 @@ pytest --alluredir=allure-results
 allure serve allure-results
 ```
 
-## Сценарии
+## Сценарии (11 тестов, без логина)
 
-| Тест | Стратегия |
-|------|-----------|
-| `test_board_creation` | API → доска видна в workspace |
-| `test_card_creation` | API → карточка на доске |
-| `test_card_update` | UI rename → API проверяет имя |
-| `test_card_delete` | UI delete → API 404 |
-| `test_board_archive` | UI close board → API `closed` |
-| `test_workspace_visibility` | приватная доска видна владельцу |
+| Файл | Что проверяет |
+|------|----------------|
+| `test_public_board` | Открытие по URL / shortUrl, описание доски |
+| `test_public_lists` | Один и несколько списков |
+| `test_public_cards` | Карточки на доске, скрытие архивной |
+| `test_public_card_detail` | Карточка по URL, описание, клик с доски |
+
+Мутации (rename, archive, delete) — в **trello_api**.
 
 ## Структура
 
 ```
-pages/          # Page Object
-tests/          # сценарии
-config.py       # .env
-conftest.py     # browser, api_client, login
+pages/          # BoardPage, CardPage (read-only)
+tests/          # публичные сценарии
+config.py       # API + browser
+conftest.py     # browser, api_client
 api_bridge.py   # импорт trello_api
 ```
