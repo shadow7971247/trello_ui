@@ -6,13 +6,21 @@ import allure
 from selene import browser
 from selenium.webdriver.common.by import By
 
+from ui_utils.ui_attach import add_screenshot
+
 
 class CardPage:
+    @staticmethod
+    def _capture(step_name: str) -> None:
+        add_screenshot(browser.driver, step_name)
+
     def open_by_url(self, url: str) -> CardPage:
-        with allure.step(f"Открыть карточку по URL: {url}"):
+        step = f"Открыть карточку по URL: {url}"
+        with allure.step(step):
             browser.open(url)
             browser.wait.until(lambda _: "/c/" in (browser.driver.current_url or ""))
             browser.wait.until(lambda _: self._card_back_ready())
+            self._capture(step)
         return self
 
     @staticmethod
@@ -29,7 +37,8 @@ class CardPage:
         )
 
     def should_have_title(self, title: str) -> CardPage:
-        with allure.step(f"Проверить название карточки «{title}»"):
+        step = f"Проверить название карточки «{title}»"
+        with allure.step(step):
             needle = title.lower()
 
             def _found() -> bool:
@@ -40,10 +49,12 @@ class CardPage:
                 return needle in body
 
             browser.wait.until(lambda _: _found())
+            self._capture(step)
         return self
 
     def close(self) -> CardPage:
-        with allure.step("Закрыть окно карточки"):
+        step = "Закрыть окно карточки"
+        with allure.step(step):
             for selector in (
                 '[data-testid="card-back-close-button"]',
                 'button[aria-label="Close dialog"]',
@@ -53,5 +64,6 @@ class CardPage:
                 for button in buttons:
                     if button.is_displayed():
                         button.click()
+                        self._capture(step)
                         return self
         return self
