@@ -35,6 +35,11 @@ SUBMIT_BUTTON = (
     'button[type="submit"], '
     '#login-button'
 )
+PASSWORD_LOGIN_LINK = (
+    'button[data-testid="password-login-button"], '
+    '#use-password, '
+    'a[data-testid="password-login-button"]'
+)
 
 
 class LoginPage:
@@ -61,10 +66,19 @@ class LoginPage:
                 return self
             self._driver.get(ATLASSIAN_LOGIN)
             self._enter_email(email)
+            self._open_password_step_if_needed()
             self._enter_password(password)
-            self._wait.until(lambda d: "trello.com" in d.current_url)
-            time.sleep(2)
-            self._wait.until(lambda _: self._is_logged_in())
+            try:
+                self._wait.until(lambda d: "trello.com" in d.current_url)
+            except Exception:
+                self._attach_debug("after-password-submit")
+                raise
+            time.sleep(3)
+            try:
+                self._wait.until(lambda _: self._is_logged_in())
+            except Exception:
+                self._attach_debug("login-not-detected")
+                raise
         return self
 
     def _is_logged_in(self) -> bool:
@@ -75,11 +89,32 @@ class LoginPage:
             return False
         if "trello.com" not in url:
             return False
-        if "/u/" in url or "/boards" in url:
+        if "/u/" in url or "/boards" in url or "/w/" in url:
             return True
         return bool(
             self._driver.find_elements(By.CSS_SELECTOR, '[data-testid="board-name"]')
+            or self._driver.find_elements(By.CSS_SELECTOR, '[data-testid="header-create-menu"]')
+            or self._driver.find_elements(By.CSS_SELECTOR, '[data-testid="workspace-boards"]')
         )
+
+    def _open_password_step_if_needed(self) -> None:
+        """Atlassian иногда показывает SSO — нужна ссылка «войти с паролем»."""
+        links = self._driver.find_elements(By.CSS_SELECTOR, PASSWORD_LOGIN_LINK)
+        if links:
+            links[0].click()
+            time.sleep(1)
+
+    def _attach_debug(self, name: str) -> None:
+        try:
+            allure.attach(
+                self._driver.current_url,
+                name=f"{name}-url",
+                attachment_type=allure.attachment_type.TEXT,
+            )
+            png = self._driver.get_screenshot_as_png()
+            allure.attach(png, name=f"{name}-screenshot", attachment_type=allure.attachment_type.PNG)
+        except Exception:
+            pass
 
     def _enter_email(self, email: str) -> None:
         field = self._wait.until(
