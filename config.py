@@ -4,8 +4,37 @@ from __future__ import annotations
 
 import os
 from dataclasses import dataclass
+from urllib.parse import quote, urlparse, urlunparse
 
 import env_loader  # noqa: F401 — загружает trello_ui/.env
+
+_DEFAULT_SELENOID_HOST = "https://selenoid.autotests.cloud/wd/hub"
+
+
+def _resolve_selenoid_url() -> str | None:
+    """SELENOID_URL целиком или host + login/password из Jenkins Bindings."""
+    explicit = os.getenv("SELENOID_URL", "").strip()
+    login = (os.getenv("SELENOID_LOGIN") or os.getenv("SELENOID_USER") or "").strip()
+    password = os.getenv("SELENOID_PASSWORD", "").strip()
+
+    if login and password:
+        base = os.getenv("SELENOID_HOST", _DEFAULT_SELENOID_HOST).strip()
+        if not base.startswith("http"):
+            base = f"https://{base}"
+        if "/wd/hub" not in base:
+            base = base.rstrip("/") + "/wd/hub"
+        parsed = urlparse(base)
+        host = parsed.hostname or "selenoid.autotests.cloud"
+        port = f":{parsed.port}" if parsed.port else ""
+        path = parsed.path or "/wd/hub"
+        netloc = f"{quote(login, safe='')}:{quote(password, safe='')}@{host}{port}"
+        return urlunparse((parsed.scheme or "https", netloc, path, "", "", ""))
+
+    if explicit and not explicit.startswith("https://:@") and "://:@" not in explicit:
+        parsed = urlparse(explicit)
+        if parsed.username or not parsed.hostname:
+            return explicit
+    return None
 
 
 @dataclass(frozen=True)
@@ -33,7 +62,7 @@ class UiConfig:
             trello_api_base_url=os.getenv(
                 "TRELLO_BASE_URL", "https://api.trello.com/1"
             ).rstrip("/"),
-            selenoid_url=os.getenv("SELENOID_URL") or None,
+            selenoid_url=_resolve_selenoid_url(),
             window_width=int(os.getenv("BROWSER_WIDTH", "1920")),
             window_height=int(os.getenv("BROWSER_HEIGHT", "1080")),
         )
@@ -50,6 +79,11 @@ class UiConfig:
         if missing:
             raise ValueError(
                 f"Не заданы обязательные переменные окружения: {', '.join(missing)}"
+            )
+        if os.getenv("JENKINS_URL") and not self.selenoid_url:
+            raise ValueError(
+                "На Jenkins нужен Selenoid: задайте SELENOID_LOGIN и SELENOID_PASSWORD "
+                "в Build Environment → Bindings (Variable должны совпадать с именами)."
             )
 
 

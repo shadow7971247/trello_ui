@@ -87,7 +87,8 @@ def pytest_runtest_makereport(item: pytest.Item) -> Generator[None, None, None]:
     report = outcome.get_result()
     if report.when not in ("setup", "call") or not report.failed:
         return
-    driver = getattr(browser, "driver", None)
+    # browser.driver создаёт локальный Chrome — используем только уже открытый driver.
+    driver = getattr(browser.config, "driver", None)
     if driver is None:
         return
     try:
