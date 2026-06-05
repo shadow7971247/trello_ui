@@ -6,6 +6,7 @@ import email
 import imaplib
 import os
 import re
+import ssl
 import time
 from datetime import datetime, timezone
 from email.header import decode_header
@@ -26,6 +27,32 @@ def imap_configured() -> bool:
     host = os.getenv("TRELLO_IMAP_HOST", "").strip()
     password = os.getenv("TRELLO_IMAP_PASSWORD", "").strip()
     return bool(host and password)
+
+
+def _bridge_ssl_context() -> ssl.SSLContext:
+    """Proton Bridge использует локальный self-signed сертификат."""
+    ctx = ssl.create_default_context()
+    if os.getenv("TRELLO_IMAP_VERIFY_SSL", "false").lower() == "true":
+        return ctx
+    ctx.check_hostname = False
+    ctx.verify_mode = ssl.CERT_NONE
+    return ctx
+
+
+def _connect_imap(host: str, port: int, use_ssl: bool, use_starttls: bool) -> imaplib.IMAP4:
+    ctx = _bridge_ssl_context()
+    if use_ssl:
+        return imaplib.IMAP4_SSL(host, port, ssl_context=ctx)
+    mail = imaplib.IMAP4(host, port)
+    if use_starttls:
+        mail.starttls(ssl_context=ctx)
+    return mail
+
+
+def _imap_starttls_default(port: int) -> bool:
+    if os.getenv("TRELLO_IMAP_STARTTLS", "").lower() in ("true", "false"):
+        return os.getenv("TRELLO_IMAP_STARTTLS", "").lower() == "true"
+    return port == 1143
 
 
 def _decode_mime(value: str) -> str:
@@ -90,7 +117,8 @@ def fetch_verification_code(
     user = os.getenv("TRELLO_IMAP_USER", os.getenv("TRELLO_EMAIL", "")).strip()
     password = os.getenv("TRELLO_IMAP_PASSWORD", "").strip()
     folder = os.getenv("TRELLO_IMAP_FOLDER", "INBOX").strip() or "INBOX"
-    use_ssl = os.getenv("TRELLO_IMAP_SSL", "true").lower() == "true"
+    use_ssl = os.getenv("TRELLO_IMAP_SSL", "true" if port == 993 else "false").lower() == "true"
+    use_starttls = _imap_starttls_default(port)
     wait = timeout_sec if timeout_sec is not None else float(
         os.getenv("TRELLO_VERIFICATION_WAIT_SEC", "120")
     )
@@ -102,7 +130,7 @@ def fetch_verification_code(
     with allure.step(f"Получить код верификации из IMAP ({host})"):
         while time.monotonic() < deadline:
             try:
-                mail = imaplib.IMAP4_SSL(host, port) if use_ssl else imaplib.IMAP4(host, port)
+                mail = _connect_imap(host, port, use_ssl, use_starttls)
                 mail.login(user, password)
                 mail.select(folder)
                 _, data = mail.search(None, "UNSEEN")
