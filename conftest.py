@@ -4,6 +4,9 @@ from __future__ import annotations
 
 from collections.abc import Generator
 from pathlib import Path
+import json
+import os
+from urllib.parse import urlparse
 
 import allure
 import pytest
@@ -98,9 +101,65 @@ def login_page(ui_config: UiConfig) -> LoginPage:
 
 @pytest.fixture(scope="session")
 def logged_in(ui_config: UiConfig, login_page: LoginPage) -> None:
+    def _cookies_path() -> Path:
+        default_path = Path.home() / ".trello_ui_cookies.json"
+        override = os.getenv("TRELLO_UI_COOKIES_PATH", "").strip()
+        return Path(override) if override else default_path
+
+    def _save_cookies(driver: RemoteWebDriver, path: Path) -> None:
+        try:
+            path.parent.mkdir(parents=True, exist_ok=True)
+            payload = driver.get_cookies()
+            path.write_text(json.dumps(payload, ensure_ascii=False), encoding="utf-8")
+        except Exception:
+            pass
+
+    def _try_load_cookies(driver: RemoteWebDriver, path: Path) -> bool:
+        if not path.is_file():
+            return False
+        try:
+            payload = json.loads(path.read_text(encoding="utf-8"))
+            if not isinstance(payload, list):
+                return False
+        except Exception:
+            return False
+
+        try:
+            driver.get(ui_config.base_url)
+            parsed = urlparse(ui_config.base_url)
+            host = parsed.hostname or "trello.com"
+            driver.delete_all_cookies()
+
+            for c in payload:
+                if not isinstance(c, dict) or "name" not in c or "value" not in c:
+                    continue
+                cookie = dict(c)
+                # Selenium add_cookie не требует expiry, а иногда ломается на типах.
+                cookie.pop("expiry", None)
+                # Подчистим домен, чтобы совпадал с текущим доменом.
+                domain = cookie.get("domain")
+                if isinstance(domain, str) and domain.startswith("."):
+                    cookie["domain"] = domain[1:]
+                if not cookie.get("domain"):
+                    cookie["domain"] = host
+                driver.add_cookie(cookie)
+            driver.refresh()
+            return True
+        except Exception:
+            return False
+
     login_page.open()
-    if not login_page._is_logged_in():
-        login_page.login(ui_config.email, ui_config.password)
+    if login_page._is_logged_in():
+        return
+
+    driver = browser.driver
+    cookies_file = _cookies_path()
+    if _try_load_cookies(driver, cookies_file) and login_page._is_logged_in():
+        return
+
+    login_page.login(ui_config.email, ui_config.password)
+    if login_page._is_logged_in():
+        _save_cookies(driver, cookies_file)
 
 
 @pytest.hookimpl(hookwrapper=True, tryfirst=True)
