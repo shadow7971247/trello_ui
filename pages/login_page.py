@@ -40,6 +40,16 @@ PASSWORD_LOGIN_LINK = (
     '#use-password, '
     'a[data-testid="password-login-button"]'
 )
+LOGIN_ERROR = (
+    '[data-testid="login-error"], '
+    '#login-error, '
+    '[role="alert"]'
+)
+COOKIE_ACCEPT = (
+    'button[data-testid="cookie-consent-accept"], '
+    '#onetrust-accept-btn-handler, '
+    'button[id*="accept"]'
+)
 
 
 class LoginPage:
@@ -68,11 +78,18 @@ class LoginPage:
             self._enter_email(email)
             self._open_password_step_if_needed()
             self._enter_password(password)
+            self._raise_if_login_error()
             try:
-                self._wait.until(lambda d: "trello.com" in d.current_url)
+                self._wait.until(
+                    lambda d: "trello.com" in d.current_url
+                    or self._is_logged_in()
+                    or self._has_login_error()
+                )
             except Exception:
                 self._attach_debug("after-password-submit")
                 raise
+            self._raise_if_login_error()
+            self._dismiss_cookie_banner()
             time.sleep(3)
             try:
                 self._wait.until(lambda _: self._is_logged_in())
@@ -84,17 +101,22 @@ class LoginPage:
     def _is_logged_in(self) -> bool:
         if self._driver.find_elements(By.CSS_SELECTOR, '[data-testid="account-menu"]'):
             return True
-        url = self._driver.current_url
-        if "id.atlassian.com" in url or "/login" in url:
+        url = self._driver.current_url.lower()
+        if "id.atlassian.com" in url:
+            return False
+        if "trello.com/login" in url or url.rstrip("/").endswith("trello.com/login"):
             return False
         if "trello.com" not in url:
             return False
         if "/u/" in url or "/boards" in url or "/w/" in url:
             return True
+        if self._driver.find_elements(By.CSS_SELECTOR, 'a[href*="/login"]'):
+            return False
         return bool(
             self._driver.find_elements(By.CSS_SELECTOR, '[data-testid="board-name"]')
             or self._driver.find_elements(By.CSS_SELECTOR, '[data-testid="header-create-menu"]')
             or self._driver.find_elements(By.CSS_SELECTOR, '[data-testid="workspace-boards"]')
+            or self._driver.find_elements(By.CSS_SELECTOR, '[data-testid="templates-page"]')
         )
 
     def _open_password_step_if_needed(self) -> None:
@@ -104,11 +126,39 @@ class LoginPage:
             links[0].click()
             time.sleep(1)
 
+    def _has_login_error(self) -> bool:
+        for el in self._driver.find_elements(By.CSS_SELECTOR, LOGIN_ERROR):
+            if (el.text or "").strip():
+                return True
+        return False
+
+    def _raise_if_login_error(self) -> None:
+        for el in self._driver.find_elements(By.CSS_SELECTOR, LOGIN_ERROR):
+            text = (el.text or "").strip()
+            if text:
+                self._attach_debug("login-error")
+                raise RuntimeError(f"Atlassian login error: {text}")
+
+    def _dismiss_cookie_banner(self) -> None:
+        for btn in self._driver.find_elements(By.CSS_SELECTOR, COOKIE_ACCEPT):
+            try:
+                if btn.is_displayed():
+                    btn.click()
+                    time.sleep(1)
+                    return
+            except Exception:
+                continue
+
     def _attach_debug(self, name: str) -> None:
         try:
             allure.attach(
                 self._driver.current_url,
                 name=f"{name}-url",
+                attachment_type=allure.attachment_type.TEXT,
+            )
+            allure.attach(
+                self._driver.title or "",
+                name=f"{name}-title",
                 attachment_type=allure.attachment_type.TEXT,
             )
             png = self._driver.get_screenshot_as_png()
