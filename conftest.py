@@ -1,11 +1,9 @@
-"""Pytest-фикстуры UI-проекта."""
+"""Pytest-фикстуры UI-проекта (публичные доски, без логина)."""
 
 from __future__ import annotations
 
 from collections.abc import Generator
 from pathlib import Path
-import json
-import os
 from urllib.parse import urlparse
 
 import allure
@@ -22,7 +20,7 @@ from selenium.webdriver.remote.webdriver import WebDriver as RemoteWebDriver
 
 from api_bridge import ApiConfig, TrelloApiClient
 from config import UiConfig, config
-from pages.login_page import LoginPage
+
 
 @pytest.fixture(scope="session")
 def ui_config() -> UiConfig:
@@ -41,11 +39,6 @@ def api_client(ui_config: UiConfig) -> TrelloApiClient:
     return TrelloApiClient(api_config)
 
 
-@pytest.fixture(scope="session")
-def member_username(api_client: TrelloApiClient) -> str:
-    return api_client.get_current_user().username
-
-
 def _create_webdriver(ui_config: UiConfig) -> webdriver.Remote:
     size = f"{ui_config.window_width},{ui_config.window_height}"
     if ui_config.browser == "firefox":
@@ -62,12 +55,6 @@ def _create_webdriver(ui_config: UiConfig) -> webdriver.Remote:
         options.add_argument("--headless=new")
     options.add_argument(f"--window-size={size}")
     options.add_argument("--disable-blink-features=AutomationControlled")
-    if ui_config.chrome_user_data_dir and not ui_config.selenoid_url:
-        profile = Path(ui_config.chrome_user_data_dir)
-        if not profile.is_absolute():
-            profile = Path(__file__).resolve().parent / profile
-        profile.mkdir(parents=True, exist_ok=True)
-        options.add_argument(f"--user-data-dir={profile}")
     if ui_config.selenoid_url:
         options.set_capability("browserName", "chrome")
         options.set_capability(
@@ -94,74 +81,6 @@ def browser_session(ui_config: UiConfig) -> Generator[None, None, None]:
         pass
 
 
-@pytest.fixture(scope="session")
-def login_page(ui_config: UiConfig) -> LoginPage:
-    return LoginPage(timeout=max(ui_config.timeout, 45))
-
-
-@pytest.fixture(scope="session")
-def logged_in(ui_config: UiConfig, login_page: LoginPage) -> None:
-    def _cookies_path() -> Path:
-        default_path = Path.home() / ".trello_ui_cookies.json"
-        override = os.getenv("TRELLO_UI_COOKIES_PATH", "").strip()
-        return Path(override) if override else default_path
-
-    def _save_cookies(driver: RemoteWebDriver, path: Path) -> None:
-        try:
-            path.parent.mkdir(parents=True, exist_ok=True)
-            payload = driver.get_cookies()
-            path.write_text(json.dumps(payload, ensure_ascii=False), encoding="utf-8")
-        except Exception:
-            pass
-
-    def _try_load_cookies(driver: RemoteWebDriver, path: Path) -> bool:
-        if not path.is_file():
-            return False
-        try:
-            payload = json.loads(path.read_text(encoding="utf-8"))
-            if not isinstance(payload, list):
-                return False
-        except Exception:
-            return False
-
-        try:
-            driver.get(ui_config.base_url)
-            parsed = urlparse(ui_config.base_url)
-            host = parsed.hostname or "trello.com"
-            driver.delete_all_cookies()
-
-            for c in payload:
-                if not isinstance(c, dict) or "name" not in c or "value" not in c:
-                    continue
-                cookie = dict(c)
-                # Selenium add_cookie не требует expiry, а иногда ломается на типах.
-                cookie.pop("expiry", None)
-                # Подчистим домен, чтобы совпадал с текущим доменом.
-                domain = cookie.get("domain")
-                if isinstance(domain, str) and domain.startswith("."):
-                    cookie["domain"] = domain[1:]
-                if not cookie.get("domain"):
-                    cookie["domain"] = host
-                driver.add_cookie(cookie)
-            driver.refresh()
-            return True
-        except Exception:
-            return False
-
-    login_page.open()
-    if login_page._is_logged_in():
-        return
-
-    driver = browser.driver
-    cookies_file = _cookies_path()
-    if _try_load_cookies(driver, cookies_file) and login_page._is_logged_in():
-        return
-
-    login_page.login(ui_config.email, ui_config.password)
-    if login_page._is_logged_in():
-        _save_cookies(driver, cookies_file)
-
-
 @pytest.hookimpl(hookwrapper=True, tryfirst=True)
 def pytest_runtest_makereport(item: pytest.Item) -> Generator[None, None, None]:
     outcome = yield
@@ -186,8 +105,6 @@ def pytest_runtest_makereport(item: pytest.Item) -> Generator[None, None, None]:
     if isinstance(driver, RemoteWebDriver) and config.selenoid_url:
         session_id = driver.session_id
         if session_id:
-            from urllib.parse import urlparse
-
             parsed = urlparse(config.selenoid_url)
             host = parsed.hostname or "selenoid.autotests.cloud"
             scheme = parsed.scheme or "https"
