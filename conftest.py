@@ -4,9 +4,6 @@ from __future__ import annotations
 
 from collections.abc import Generator
 from pathlib import Path
-from urllib.parse import urlparse
-
-import allure
 import pytest
 from selenium_compat import ensure_selenium_html5_shim
 
@@ -20,6 +17,7 @@ from selenium.webdriver.remote.webdriver import WebDriver as RemoteWebDriver
 
 from api_bridge import ApiConfig, TrelloApiClient
 from config import UiConfig, config
+from ui_utils.ui_attach import add_browser_log, add_screenshot, add_selenoid_video
 
 
 @pytest.fixture(scope="session")
@@ -81,37 +79,23 @@ def browser_session(ui_config: UiConfig) -> Generator[None, None, None]:
         pass
 
 
+def _report_outcome_label(outcome: str) -> str:
+    return {"passed": "успех", "failed": "ошибка", "skipped": "пропуск"}.get(
+        outcome, outcome
+    )
+
+
 @pytest.hookimpl(hookwrapper=True, tryfirst=True)
 def pytest_runtest_makereport(item: pytest.Item) -> Generator[None, None, None]:
     outcome = yield
     report = outcome.get_result()
-    if report.when not in ("setup", "call") or not report.failed:
+    if report.when != "call":
         return
-    # browser.driver создаёт локальный Chrome — используем только уже открытый driver.
     driver = getattr(browser.config, "driver", None)
     if driver is None:
         return
-    try:
-        png = driver.get_screenshot_as_png()
-        allure.attach(png, name="screenshot", attachment_type=allure.attachment_type.PNG)
-    except Exception:
-        pass
-    try:
-        logs = driver.get_log("browser")
-        if logs:
-            body = "\n".join(f"{e.get('level', '')}: {e.get('message', '')}" for e in logs[-50:])
-            allure.attach(body, name="browser-log", attachment_type=allure.attachment_type.TEXT)
-    except Exception:
-        pass
+    label = _report_outcome_label(report.outcome)
+    add_screenshot(driver, f"{item.name} — {label}")
+    add_browser_log(driver)
     if isinstance(driver, RemoteWebDriver) and config.selenoid_url:
-        session_id = driver.session_id
-        if session_id:
-            parsed = urlparse(config.selenoid_url)
-            host = parsed.hostname or "selenoid.autotests.cloud"
-            scheme = parsed.scheme or "https"
-            video_url = f"{scheme}://{host}/video/{session_id}.mp4"
-            allure.attach(
-                video_url,
-                name="selenoid-video",
-                attachment_type=allure.attachment_type.URI_LIST,
-            )
+        add_selenoid_video(driver, config.selenoid_url)

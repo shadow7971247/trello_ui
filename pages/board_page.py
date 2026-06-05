@@ -8,37 +8,52 @@ import allure
 from selenium.webdriver.common.by import By
 from selene import be, browser, have
 
+from ui_utils.ui_attach import add_screenshot
+
 
 class BoardPage:
     _LOGIN_HOSTS = ("id.atlassian.com", "trello.com/login")
 
+    @staticmethod
+    def _capture(step_name: str) -> None:
+        add_screenshot(browser.driver, step_name)
+
     def open_by_url(self, url: str) -> BoardPage:
-        with allure.step(f"Открыть доску по URL: {url}"):
+        step = f"Открыть доску по URL: {url}"
+        with allure.step(step):
             browser.open(url)
             self._wait_board_loaded()
+            self._capture(step)
         return self
 
     def should_be_public_view(self) -> BoardPage:
-        with allure.step("Проверить, что открыта доска без редиректа на логин"):
+        step = "Проверить, что открыта доска без редиректа на логин"
+        with allure.step(step):
             url = (browser.driver.current_url or "").lower()
             assert not any(host in url for host in self._LOGIN_HOSTS), (
                 f"Редирект на логин: {browser.driver.current_url}"
             )
             browser.element('[data-testid="board-name-display"]').should(be.visible)
+            self._capture(step)
         return self
 
     def should_have_board_title(self, title: str) -> BoardPage:
-        with allure.step(f"Проверить заголовок доски «{title}»"):
+        step = f"Проверить заголовок доски «{title}»"
+        with allure.step(step):
             browser.element('[data-testid="board-name-display"]').should(have.text(title))
+            self._capture(step)
         return self
 
     def should_have_title_in_browser_tab(self, title: str) -> BoardPage:
-        with allure.step(f"Проверить заголовок вкладки браузера: «{title}»"):
+        step = f"Проверить заголовок вкладки браузера: «{title}»"
+        with allure.step(step):
             browser.wait.until(lambda _: title.lower() in (browser.driver.title or "").lower())
+            self._capture(step)
         return self
 
     def should_have_card_link(self, card_name: str) -> BoardPage:
-        with allure.step(f"Проверить ссылку на карточку «{card_name}»"):
+        step = f"Проверить ссылку на карточку «{card_name}»"
+        with allure.step(step):
             card = self._find_by_testid_text("card-name", card_name)
             assert card, f"Карточка «{card_name}» не найдена"
             href = card.get_attribute("href") or ""
@@ -49,26 +64,33 @@ class BoardPage:
                 except Exception:
                     href = ""
             assert "/c/" in href, f"У карточки нет ссылки /c/: {href!r}"
+            self._capture(step)
         return self
 
     def should_have_list(self, list_name: str) -> BoardPage:
-        with allure.step(f"Проверить список «{list_name}»"):
+        step = f"Проверить список «{list_name}»"
+        with allure.step(step):
             assert self._find_by_testid_text("list", list_name), (
                 f"Список «{list_name}» не найден на доске"
             )
+            self._capture(step)
         return self
 
     def should_have_card(self, card_name: str) -> BoardPage:
-        with allure.step(f"Проверить карточку «{card_name}» на доске"):
+        step = f"Проверить карточку «{card_name}» на доске"
+        with allure.step(step):
             assert self._find_by_testid_text("card-name", card_name), (
                 f"Карточка «{card_name}» не найдена на доске"
             )
+            self._capture(step)
         return self
 
     def should_not_have_card(self, card_name: str) -> BoardPage:
-        with allure.step(f"Проверить отсутствие карточки «{card_name}»"):
+        step = f"Проверить отсутствие карточки «{card_name}»"
+        with allure.step(step):
             for attempt in range(6):
                 if not self._find_by_testid_text("card-name", card_name):
+                    self._capture(step)
                     return self
                 if attempt < 5:
                     browser.driver.refresh()
@@ -78,7 +100,8 @@ class BoardPage:
         return self
 
     def open_card(self, card_name: str) -> BoardPage:
-        with allure.step(f"Открыть карточку «{card_name}»"):
+        step = f"Открыть карточку «{card_name}»"
+        with allure.step(step):
             card = self._find_by_testid_text("card-name", card_name)
             assert card, f"Карточка «{card_name}» не найдена"
             link = card
@@ -97,6 +120,7 @@ class BoardPage:
                     )
                 )
             )
+            self._capture(step)
         return self
 
     def _wait_board_loaded(self) -> None:
