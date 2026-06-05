@@ -92,8 +92,8 @@ def browser_session(ui_config: UiConfig) -> Generator[None, None, None]:
 
 
 @pytest.fixture(scope="session")
-def login_page() -> LoginPage:
-    return LoginPage()
+def login_page(ui_config: UiConfig) -> LoginPage:
+    return LoginPage(timeout=max(ui_config.timeout, 45))
 
 
 @pytest.fixture(scope="session")
@@ -107,7 +107,7 @@ def logged_in(ui_config: UiConfig, login_page: LoginPage) -> None:
 def pytest_runtest_makereport(item: pytest.Item) -> Generator[None, None, None]:
     outcome = yield
     report = outcome.get_result()
-    if report.when != "call" or not report.failed:
+    if report.when not in ("setup", "call") or not report.failed:
         return
     driver = getattr(browser, "driver", None)
     if driver is None:
@@ -127,7 +127,12 @@ def pytest_runtest_makereport(item: pytest.Item) -> Generator[None, None, None]:
     if isinstance(driver, RemoteWebDriver) and config.selenoid_url:
         session_id = driver.session_id
         if session_id:
-            video_url = f"{config.selenoid_url.rstrip('/')}/video/{session_id}.mp4"
+            from urllib.parse import urlparse
+
+            parsed = urlparse(config.selenoid_url)
+            host = parsed.hostname or "selenoid.autotests.cloud"
+            scheme = parsed.scheme or "https"
+            video_url = f"{scheme}://{host}/video/{session_id}.mp4"
             allure.attach(
                 video_url,
                 name="selenoid-video",
