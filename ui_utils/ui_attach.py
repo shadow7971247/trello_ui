@@ -7,13 +7,17 @@ from urllib.parse import urlparse
 import allure
 from selenium.webdriver.remote.webdriver import WebDriver
 
+from ui_utils.video_frames import save_video_frame
+
 
 def add_screenshot(driver: WebDriver | None, name: str) -> None:
     if driver is None:
         return
     try:
+        png = driver.get_screenshot_as_png()
+        save_video_frame(png)
         allure.attach(
-            driver.get_screenshot_as_png(),
+            png,
             name=name,
             attachment_type=allure.attachment_type.PNG,
         )
