@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Generator
-from pathlib import Path
+
 import pytest
 from selenium_compat import ensure_selenium_html5_shim
 
@@ -15,14 +15,19 @@ from selenium.webdriver.chrome.options import Options as ChromeOptions
 from selenium.webdriver.firefox.options import Options as FirefoxOptions
 from selenium.webdriver.remote.webdriver import WebDriver as RemoteWebDriver
 
-from api_bridge import ApiConfig, TrelloApiClient
-from config import UiConfig, config
+from api_bridge import ApiConfig, TrelloApiClient, board_name, prepare_public_board
+from config import UiConfig
 from ui_utils.ui_attach import add_browser_log, add_screenshot, add_selenoid_video
+
+_session_ui_config: UiConfig | None = None
 
 
 @pytest.fixture(scope="session")
 def ui_config() -> UiConfig:
+    global _session_ui_config
+    config = UiConfig.from_env()
     config.validate()
+    _session_ui_config = config
     return config
 
 
@@ -35,6 +40,21 @@ def api_client(ui_config: UiConfig) -> TrelloApiClient:
     )
     api_config.validate()
     return TrelloApiClient(api_config)
+
+
+@pytest.fixture
+def public_test_board(api_client: TrelloApiClient):
+    created = []
+
+    def factory(label: str = "Public UI"):
+        board = prepare_public_board(api_client, name=board_name(label))
+        assert board.url, "API не вернул URL публичной доски"
+        created.append(board)
+        return board
+
+    yield factory
+    for board in created:
+        api_client.delete_board(board.id)
 
 
 def _create_webdriver(ui_config: UiConfig) -> webdriver.Remote:
@@ -73,10 +93,7 @@ def browser_session(ui_config: UiConfig) -> Generator[None, None, None]:
 
     yield
 
-    try:
-        driver.quit()
-    except Exception:
-        pass
+    driver.quit()
 
 
 def _report_outcome_label(outcome: str) -> str:
@@ -97,5 +114,5 @@ def pytest_runtest_makereport(item: pytest.Item) -> Generator[None, None, None]:
     label = _report_outcome_label(report.outcome)
     add_screenshot(driver, f"{item.name} — {label}")
     add_browser_log(driver)
-    if isinstance(driver, RemoteWebDriver) and config.selenoid_url:
-        add_selenoid_video(driver, config.selenoid_url)
+    if isinstance(driver, RemoteWebDriver) and _session_ui_config and _session_ui_config.selenoid_url:
+        add_selenoid_video(driver, _session_ui_config.selenoid_url)

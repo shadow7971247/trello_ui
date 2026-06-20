@@ -26,15 +26,17 @@ if str(TRELLO_API_ROOT) not in sys.path:
 
 from api.client import TrelloApiClient  # noqa: E402
 from api.endpoints import Endpoints  # noqa: E402
+from fixtures.factories import (  # noqa: E402
+    prepare_board,
+    prepare_card,
+    prepare_list,
+    prepare_public_board,
+)
 from fixtures.generators import (  # noqa: E402
     board_name,
     card_description,
     card_name,
     list_name,
-    prepare_board,
-    prepare_card,
-    prepare_list,
-    prepare_public_board,
 )
 from utils.config import Config as ApiConfig  # noqa: E402
 
